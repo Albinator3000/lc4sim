@@ -31,8 +31,8 @@ int ReadObjectFile(char* filename, MachineState* CPU)
 
 	while (fread(&section_type, sizeof(unsigned short), 1, file) == 1) { // parse the various file headers:
 	// 0xCADE, 0xDADA, 0xC3B7, 0xF17E, 0x715E
-			printf("Read section type: 0x%04X (before endianness)\n", section_type);
-			section_type = convert_endianness(section_type);
+			//printf("Read section type: 0x%04X (before endianness)\n", section_type);
+			//section_type = convert_endianness(section_type);
 			printf("Section type after conversion: 0x%04X\n", section_type);
 			section_type = convert_endianness(section_type); // set endianness for header
 
@@ -63,8 +63,8 @@ int ReadObjectFile(char* filename, MachineState* CPU)
 
 						CPU->memory[address + i] = convert_endianness(data); // populate mem with the CODE data at the given addr
 				}
-				printf("Processing %s section at address 0x%04X with %d items\n", 
-       	section_type == 0xCADE ? "CODE" : "DATA", address, count);
+				//printf("Processing %s section at address 0x%04X with %d items\n", 
+       	//section_type == 0xCADE ? "CODE" : "DATA", address, count);
 				break;
 			}
 
@@ -92,8 +92,8 @@ int ReadObjectFile(char* filename, MachineState* CPU)
 					}
 					CPU->memory[address + i] = convert_endianness(data); // populate mem with the DATA values at the given addr
 				}
-				printf("Processing %s section at address 0x%04X with %d items\n", 
-       	section_type == 0xDADA ? "CODE" : "DATA", address, count);
+				//printf("Processing %s section at address 0x%04X with %d items\n", 
+       	//section_type == 0xDADA ? "CODE" : "DATA", address, count);
 				break;
 			}
 
@@ -113,7 +113,7 @@ int ReadObjectFile(char* filename, MachineState* CPU)
 				}
 				count = convert_endianness(count); // our symbol string length
 
-				fseek(file, count, SEEK_CUR); // skip symbol data (not needed for this assignment)
+				fseek(file, count, SEEK_CUR);
 
 				break;
 			}
@@ -149,12 +149,12 @@ int ReadObjectFile(char* filename, MachineState* CPU)
 			}
 
 			default:
-				fclose(file); // unknown section type - should not happen with valid files
+				fclose(file); // we're in an unknown section
 				printf("error 12: unknown section type 0x%04X \n", section_type);
 				return -1;
 		}
 	}
 
-	fclose(file); // close the file
-  return 0; // success
+	fclose(file);
+  return 0; // no errors thrown
 }
