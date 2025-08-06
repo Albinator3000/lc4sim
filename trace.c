@@ -44,9 +44,6 @@ int main(int argc, char** argv)
    
     printf("Memory contents loaded:\n"); //print memory
     for (int i = 0; i < 65536; i++) {
-			if (i == 1 || i == 2 || i == 3) {
-					printf("address: %05X contents: 0x%04X\n", i, CPU->memory[i]);
-			}
 			if (CPU->memory[i] != 0) {
 					printf("address: %05X contents: 0x%04X\n", i, CPU->memory[i]);
 			}
