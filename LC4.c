@@ -84,14 +84,11 @@ void WriteOut(MachineState* CPU, FILE* output)
  */
 int UpdateMachineState(MachineState* CPU, FILE* output)
 {
-    if (CPU->PC == 0x80FF) { // exit the program
-				printf("reached PC == 0x80FF so we leave the program");
-        return 1;
-    }
+    
     
     ClearSignals(CPU); // reset signals
     unsigned short instr = CPU->memory[CPU->PC]; // get instr
-    WriteOut(CPU, output); // current state
+    //WriteOut(CPU, output); // current state
     unsigned short opcode = INSN_OP(instr); // parse instruction
     
     switch (opcode) {
@@ -192,6 +189,11 @@ int UpdateMachineState(MachineState* CPU, FILE* output)
             CPU->PC++;
             break;
     }
+		if (CPU->PC == 0x80FF) { // exit the program
+				printf("reached PC == 0x80FF so we leave the program");
+        return 1;
+    }
+		WriteOut(CPU, output); // current state
     
     return 0; // Continue execution
 }
