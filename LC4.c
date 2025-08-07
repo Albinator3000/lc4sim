@@ -104,34 +104,89 @@ int UpdateMachineState(MachineState* CPU, FILE* output)
         case 2: // CMPR
             ComparativeOp(CPU, output);
             break;
+				case 4: // JSR/JSRR  
+            JSROp(CPU, output);
+            break;
         case 5: // LOG
             LogicalOp(CPU, output);
             break;
         case 6: // LDR
+						{
+							unsigned short instr = CPU->memory[CPU->PC];
+							unsigned short base_reg = INSN_Rs(instr); // bits 6-8
+							short offset = SEXT(INSN_IMM6(instr), 6); // sign extend offset
+							unsigned short addr = CPU->R[base_reg] + offset; // calculate addr
+							
+							// set control signals
+							CPU->regFile_WE = 1; // LDRneeds DATA WE enabled for accessing data mem
+							CPU->rdMux_CTL = INSN_Rd(instr);
+							CPU->regInputVal = CPU->memory[addr]; // load from mem
+							CPU->R[CPU->rdMux_CTL] = CPU->regInputVal;
+							CPU->NZP_WE = 1;
+							SetNZP(CPU, CPU->regInputVal);
+							CPU->PC++;
+						}
 						break;
         case 7: // STR
+					{	
+						unsigned short instr = CPU->memory[CPU->PC];
+						unsigned short base_reg = INSN_Rs(instr); // bits 6-8
+						short offset = SEXT(INSN_IMM6(instr), 6); // sign extend offset
+						unsigned short addr = CPU->R[base_reg] + offset; // calculate addr
+						CPU->DATA_WE = 1; // STR needs Data WE access enabled for accessing data meme
+						CPU->dmemAddr = addr;
+						CPU->dmemValue = CPU->R[INSN_Rd(instr)]; // store Rd to memory
+						CPU->memory[addr] = CPU->dmemValue;
+						CPU->PC++;
+					}
+            break;
+				case 8:// RTI
+            CPU->PSR = 0;
+            CPU->regFile_WE = 0;
+            CPU->NZP_WE = 0;
+            CPU->DATA_WE = 0;
+            CPU->PC = CPU->R[7];
             break;
 				case 9: // CONST
             {
-                CPU->regFile_WE = 1;
-                CPU->rdMux_CTL = INSN_Rd(instr);
-                CPU->regInputVal = SEXT(INSN_IMM9(instr), 9);
-                CPU->R[CPU->rdMux_CTL] = CPU->regInputVal;
-                CPU->NZP_WE = 1;
-                SetNZP(CPU, CPU->regInputVal);
-                CPU->PC++;
+							CPU->regFile_WE = 1;
+							CPU->rdMux_CTL = INSN_Rd(instr); //Rd
+							CPU->regInputVal = SEXT(INSN_IMM9(instr), 9); //get Imm9 val
+							CPU->R[CPU->rdMux_CTL] = CPU->regInputVal; 
+							CPU->NZP_WE = 1;
+							SetNZP(CPU, CPU->regInputVal);
+							CPU->PC++;
             }
+            break;
+				case 10: // SLL/SRA/SRL/MOD
+            ShiftModOp(CPU, output);
             break;
         case 12: // JMP/JMPR
             JumpOp(CPU, output);
             break;
-        case 4: // JSR/JSRR  
-            JSROp(CPU, output);
-            break;
-        case 10: // SLL/SRA/SRL/MOD
-            ShiftModOp(CPU, output);
-            break;
-            
+        case 13:	// HICONST
+						CPU->regFile_WE = 1; // set control sigs
+						CPU->NZP_WE = 1;
+						CPU->DATA_WE = 0;
+						CPU->rdMux_CTL = INSN_Rd(instr); // get dest register
+						CPU->regInputVal = (CPU->R[CPU->rdMux_CTL] & 0x00FF) | ((instr & 0x00FF) << 8); // keep low 8 bits, set high 8 bits       
+						CPU->R[CPU->rdMux_CTL] = CPU->regInputVal;
+						SetNZP(CPU, CPU->regInputVal);
+						CPU->PC++;
+						break;
+				case 15:	// TRAP
+						CPU->PSR = 1; //enter OS mode
+						CPU->regFile_WE = 1; //set control sigs
+						CPU->NZP_WE = 1;
+						CPU->DATA_WE = 0;
+						CPU->regInputVal = CPU->PC+1;//save ret addr
+						CPU->rdMux_CTL = 7; //write to R7
+						SetNZP(CPU, CPU->regInputVal);
+						CPU->R[7] = CPU->PC+1;// store return address in reg 7
+						CPU->PC = (0x8000 | (instr & 0x00FF)); // jump to trap vector
+						break;
+        
+        
         default:
             //PC=PC+1
             CPU->PC++;
@@ -155,29 +210,28 @@ void BranchOp(MachineState* CPU, FILE* output)
     unsigned short instr = CPU->memory[CPU->PC];
     unsigned short subop = (instr >> 9) & 0x7; //bits 9-11 for branch cond
     short offset = SEXT(INSN_IMM9(instr), 9);//. sign extend 9-bit offset
-    
     int should_branch = 0; // flag to determin if we branch
     
     switch (subop) {
-        case 0: // never go forward regardless of outcome
+        case 0: // PC = PC + 1, no comparison needed
             should_branch = 0;
             break;
-        case 1: // BRP: if pos
+        case 1: // BRP: pos
             should_branch = (CPU->PSR & 0x0001) != 0; // check P bit
             break;
-        case 2: // BRZ: if zero
+        case 2: // BRZ: zero
             should_branch = (CPU->PSR & 0x0002) != 0; //check Z bit
             break;
-        case 3: // BRZP: if zero or pos
+        case 3: // BRZP: zero or pos
             should_branch = (CPU->PSR & 0x0003) != 0; // check Z or P bits
             break;
-        case 4: // BRN: if neg
+        case 4: // BRN: neg
             should_branch = (CPU->PSR & 0x0004) != 0; // check N bit
             break;
-        case 5: // BRNP: if neg or pos
+        case 5: // BRNP: neg or pos
             should_branch = (CPU->PSR & 0x0005) != 0; // check N or P bits
             break;
-        case 6: // BRNZ: if neg or zero
+        case 6: // BRNZ: neg or zero
             should_branch = (CPU->PSR & 0x0006) != 0; // check N or Z bits
             break;
         case 7: // BRNZP: "PC = PC+1" -> advance regardless of cond outcome
@@ -199,9 +253,7 @@ void ArithmeticOp(MachineState* CPU, FILE* output)
 {
     unsigned short instr = CPU->memory[CPU->PC];
     unsigned short subop = (instr >> 3) & 0x7; // make subopcode
-    
-		//set control segnals
-		CPU->rdMux_CTL = INSN_Rd(instr);
+		CPU->rdMux_CTL = INSN_Rd(instr); //set control segs
 		CPU->regFile_WE = 1;
     CPU->NZP_WE = 1;
     short return_val;
@@ -264,7 +316,6 @@ void ComparativeOp(MachineState* CPU, FILE* output)
     unsigned short subop = (instr >> 7) & 0x3; // bits 7-8 for CMP subopcode
     CPU->NZP_WE = 1; // set cntrl sigs
     short return_val;
-    
     switch (subop) {
         case 0: // CMP
             if ((instr & 0x20) == 0) { // bit 5 = 0: reg
@@ -355,7 +406,16 @@ void LogicalOp(MachineState* CPU, FILE* output)
  */
 void JumpOp(MachineState* CPU, FILE* output)
 {
-    
+    unsigned short instr = CPU->memory[CPU->PC];
+    unsigned short subop = (instr >> 11) & 0x1; // bit 11 for JMP vs JMPR
+    if (subop == 0) { // JMP - bit 11 = 0
+        short offset = SEXT(INSN_IMM11(instr), 11); // sign extend imm11
+        CPU->PC = CPU->PC + 1 + offset; // PC = PC + 1 + offset
+    } else { // JMPR - bit 11 = 1
+        unsigned short base_reg = INSN_Rs(instr); // bits 8-6 for base register
+        short offset = SEXT(INSN_IMM6(instr), 6); // sign extend 6-bit offset
+        CPU->PC = CPU->R[base_reg] + offset; // PC = Rs + offset
+    }
 }
 
 /*
@@ -363,7 +423,24 @@ void JumpOp(MachineState* CPU, FILE* output)
  */
 void JSROp(MachineState* CPU, FILE* output)
 {
+    unsigned short instr = CPU->memory[CPU->PC];
+    unsigned short subop = (instr >> 11) & 0x1; // bit 11 for JSR vs JSRR
     
+    CPU->regFile_WE = 1;
+    CPU->rdMux_CTL = 7; // always write to R7
+    CPU->regInputVal = CPU->PC + 1; // return addr
+    CPU->R[7] = CPU->regInputVal; //reg 7 is where we will store our return val
+    CPU->NZP_WE = 1;
+    SetNZP(CPU, CPU->regInputVal);
+    
+    if (subop == 0) { // JSR - bit 11 = 0
+        short offset = SEXT(INSN_IMM11(instr), 11); //sign extend 11-bit offset
+        CPU->PC = CPU->PC + 1 + offset; // PC = PC + 1 + offset
+    } else { // JSRR - bit 11 = 1
+        unsigned short base_reg = INSN_Rs(instr); // Rs
+        short offset = SEXT(INSN_IMM6(instr), 6); // sign extend 6-bit offset
+        CPU->PC = CPU->R[base_reg] + offset; // PC = Rs + offset
+    }
 }
 
 /*
@@ -371,7 +448,43 @@ void JSROp(MachineState* CPU, FILE* output)
  */
 void ShiftModOp(MachineState* CPU, FILE* output)
 {
+    unsigned short instr = CPU->memory[CPU->PC];
+    unsigned short subop = (instr >> 4) & 0x3; // bits 4-5 for shift/mod subopcode
+    CPU->rdMux_CTL = INSN_Rd(instr);//set control sigs
+    CPU->regFile_WE = 1;
+    CPU->NZP_WE = 1;
+    short return_val;
+    unsigned short shift_amt = instr & 0xF;// bits 0-3 for shift amount
     
+    switch (subop) {
+        case 0: // SLL
+            return_val = CPU->R[INSN_Rs(instr)] << shift_amt; // shift left by shift_amt
+            break;
+        case 1: // SRA
+            return_val = CPU->R[INSN_Rs(instr)] >> shift_amt; // arith right shift
+            break;
+        case 2: // SRL
+            {
+                unsigned short temp = (unsigned short)CPU->R[INSN_Rs(instr)];
+                temp = temp >> shift_amt;//logical right shift
+                return_val = (short)temp;
+            }
+            break;
+        case 3: // MOD
+            if (CPU->R[INSN_Rt(instr)] != 0) { // no mod by zero
+                return_val = CPU->R[INSN_Rs(instr)] % CPU->R[INSN_Rt(instr)]; // Rs mod Rt
+            } else { // mod by 0 error
+                return_val = 0;
+            }
+            break;
+        default:
+            return_val = 0;
+            break;
+    }
+    CPU->regInputVal = return_val;
+    CPU->R[CPU->rdMux_CTL] = return_val;
+    SetNZP(CPU, return_val);
+    CPU->PC++;
 }
 
 /*
